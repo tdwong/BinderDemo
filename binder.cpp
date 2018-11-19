@@ -30,6 +30,25 @@
 
 #define SERVICE_NAME "binder_Demo"
 
+//
+// NOTE:
+//	- define START_CLIENT_THREAD to use a separate thread for remote operation(s)
+//	- linkToDeath must be registered in the same thread that performs remote operation
+//
+#define	START_CLIENT_THREAD		1	// run a separate thread
+#if	defined(START_CLIENT_THREAD)
+	#define	LINK_TO_DEATH_IN_CLIENT	1
+#else
+	#undef	LINK_TO_DEATH_IN_CLIENT
+#endif	//!START_CLIENT_THREAD
+
+//
+// enable one or more, or none remote operation(s) to be performed in the loop
+//
+//#define	REMOTE_ALERT	0x01
+//#define	REMOTE_PUSH		0x02
+#define	REMOTE_ADD		0x04
+
 /* For relevant code see:
     frameworks/native/{include,libs}/binder/{IInterface,Parcel}.{h,cpp}
     system/core/include/utils/{Errors,RefBase}.h
@@ -47,6 +66,7 @@
 #include <binder/ProcessState.h>
 #include <binder/IServiceManager.h>
 #include <binder/IPCThreadState.h>
+#include <binder/Status.h>
 
 using namespace android;
 
@@ -142,14 +162,19 @@ class BpDemo : public BpInterface<IDemo>
             data.writeInt32(v1);
             data.writeInt32(v2);
             aout << "BpDemo::add parcel to be sent:\n";
+              ALOGD("BpDemo::add parcel to be sent:");		// send to log
             data.print(PLOG); endl(PLOG);
             remote()->transact(ADD, data, &reply);
-            ALOGD("BpDemo::add transact reply");
+            aout << "BpDemo::add transact reply\n";			// send to stdou
+              ALOGD("BpDemo::add transact reply");
             reply.print(PLOG); endl(PLOG);
 
-            int32_t res;
+            int32_t res = 0;
             status_t status = reply.readInt32(&res);
-            ALOGD("BpDemo::add(%i, %i) = %i (status: %i)", v1, v2, res, status);
+			// Status s=Status::fromStatusT(status).toString8().string();
+            aout << "BpDemo::add transact reply\n";			// send to stdou
+            printf("BpDemo::add(%i, %i) = %i (status: %i: %s)\n", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
+             ALOGD("BpDemo::add(%i, %i) = %i (status: %i: %s)", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
             return res;
         }
 };	// class BpDemo : public BpInterface<IDemo>
@@ -238,6 +263,41 @@ class Demo : public BnDemo
     }
 };
 
+
+/*
+// https://www.androiddesignpatterns.com/2013/08/binders-death-recipients.html
+//
+//	Death Recipients
+//
+//	For system/service to detact an application's death so it can quickly clean up its state ---
+//	this task is made easy using the Binder’s “link-to-death” facility, which allows a process to get a callback
+//	when another process hosting a binder object goes away. In Android, any process can receive a notification
+//	when another process dies by taking the following steps:
+//
+//	* First, the process creates a DeathRecipient callback object containing the code to be executed
+//	  when the death notification arrives.
+//
+//	* Next, it obtains a reference to a Binder object that lives in another process and calls its
+//	  linkToDeath(IBinder.DeathRecipient recipient, int flags), passing the DeathRecipient callback object
+//	  as the first argument.
+//
+//	* Finally, it waits for the process hosting the Binder object to die. When the Binder kernel driver detects
+//	  that the process hosting the Binder is gone, it will notify the registered DeathRecipient callback object
+//	  by calling its binderDied() method.
+//
+*/
+
+//
+// see ${NOVA}/frameworks/native/include/binder/IBinder.h: class DeathRecipient : public virtual RefBase
+//
+/*
+    class DeathRecipient : public virtual RefBase
+    {
+    public:
+        virtual void binderDied(const wp<IBinder>& who) = 0;
+    };
+*/
+//
 bool gClientRun = true;
 class DeathNotifier : public android::IBinder::DeathRecipient
 {
@@ -247,7 +307,7 @@ class DeathNotifier : public android::IBinder::DeathRecipient
         virtual void binderDied(const wp<IBinder>& /*who*/) override {
 			// it appears that binderDied() is runing in the main() thread context
 			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
-			INFO("death notification: %s", __func__);
+			 INFO("death notification: %s", __func__);
 			ALOGD("death notification: %s", __func__);
 
 			// stop clnt() thread
@@ -255,6 +315,14 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 
 			// stop main thread
 			android::IPCThreadState::self()->stopProcess();
+
+#if	0	// intentional client crash -> if use Listener, service provider will be notified
+		/*
+		// intentional NULL pointer de-reference
+			int *p = NULL;
+			*p = 1;
+		*/
+#endif	//0
 		}
 };
 
@@ -263,11 +331,21 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 ///sp<IDemo> getDemoServ()
 sp<IBinder> getDemoServ()
 {
+//
+// see ${NOVA}/frameworks/native/include/binder/IServiceManager.h:sp<IServiceManager> defaultServiceManager();
+//
     sp<IServiceManager> sm = defaultServiceManager();
     ASSERT(sm != 0);
     sp<IBinder> binder = sm->getService(String16(SERVICE_NAME));
     // TODO: If the "Demo" service is not running, getService times out and binder == 0.
     ASSERT(binder != 0);
+
+		status_t rc = binder->pingBinder();
+		INFO("pingBinder: rc=%d", rc);
+
+	//
+	// do NOT register linkToDeath() here. No death notification will be triggered as the DeathNotifier() is out-of-scope when getDemoServ() returns
+	//
 ///    sp<IDemo> demo = interface_cast<IDemo>(binder);
 ///    ASSERT(demo != 0);
 ///    return demo;
@@ -276,16 +354,52 @@ sp<IBinder> getDemoServ()
 }
 
 
+// struct to pass to clnt() thread
+// using struct to preserve android::sp
+struct thread_data {
+	sp<IDemo>   spIDemo;
+	sp<IBinder> spIBinder;
+};
+
 // client function/thread
 void *clnt(void *ptr)
 {
 	printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+
+	thread_data *p = (thread_data*) ptr;
+	sp<IDemo> demo = p->spIDemo;
+
+#if	defined(LINK_TO_DEATH_IN_CLIENT)
+	sp<IBinder> binder = p->spIBinder;
+
+		sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
+		status_t rc = binder->linkToDeath(spDeathNotifier);
+		INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
+#endif	//LINK_TO_DEATH_IN_CLIENT
 
 	while (gClientRun) {
 
 		/*
 		// will receive death notification even with simple DO-nothing loop
 		*/
+
+	#if	defined(REMOTE_ADD)
+		// will receive death notification with add()
+		int32_t sum = demo->add(2, 3);
+		ALOGD("demo->add(), sum=%d", sum);
+	#endif	//REMOTE_ADD
+
+	#if	defined(REMOTE_PUSH)
+		// will receive death notification with push()
+		demo->push(23);
+		ALOGD("demo->push()");
+	#endif	//REMOTE_PUSH
+
+	#if	defined(REMOTE_ALERT)
+		// will receive death notification with push()
+		demo->alert();
+		ALOGD("demo->alert()");
+	#endif	//REMOTE_ALERT
 
 		sleep(3);
 	}
@@ -300,11 +414,19 @@ int main(int argc, char **argv) {
     if (argc == 1) {
         ALOGD("We're the service");
 
+		// register SERVICE_NAME as my service with Context Manager
         defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
+		// kickstart the server
         android::ProcessState::self()->startThreadPool();
-        ALOGD("Demo service is now ready");
+        ALOGD("Binder_Demo service is now ready");
         IPCThreadState::self()->joinThreadPool();
-        ALOGD("Demo service thread joined");
+        ALOGD("Binder_Demo service thread joined");
+
+		//
+		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
+		//
+		android::IPCThreadState::shutdown();
+
     } else if (argc == 2) {
         INFO("We're the client: %s", argv[1]);
 
@@ -327,23 +449,52 @@ int main(int argc, char **argv) {
 //
 // register for binder death notification
 //
-#if	1//!defined(LINK_TO_DEATH_IN_CLIENT)
-		// No death notification with this approach
-		sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
-		status_t rc = binder->linkToDeath(spDeathNotifier);
-		INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
+#if	!defined(LINK_TO_DEATH_IN_CLIENT)
+			// No death notification with this approach
+			sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
+			status_t rc = binder->linkToDeath(spDeathNotifier);
+			INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
 #endif	//!LINK_TO_DEATH_IN_CLIENT
 
-		sp<ProcessState> proc(ProcessState::self());
-		INFO("starting threaed pool...");
-		ProcessState::self()->startThreadPool();
+				// prepare a structure to hold android::sp
+				thread_data threaddata;
+				threaddata.spIDemo = demo;
+				threaddata.spIBinder = binder;
 
-		clnt(NULL);
+#if	defined(START_CLIENT_THREAD)
+			// start client thread
+			pthread_t tid;
+			pthread_create(&tid, NULL, clnt, &threaddata);
+			printf("client thread id:%lx...\n",tid);
+			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
-		// no need for joinThreadPool() nor shutdown()
-		//IPCThreadState::self()->joinThreadPool();
-		//android::IPCThreadState::shutdown();
+			//https://groups.google.com/forum/#!topic/android-platform/vt3xsM2kcTM
+			// we need a thread pool to receive binder callbacks (e.g., for DeathRecipient)
+			sp<ProcessState> proc(ProcessState::self());
+			INFO("starting threaed pool...");
+			// startThreadPool() required for main() to receive death notification
+			ProcessState::self()->startThreadPool();
+///			IPCThreadState::self()->joinThreadPool();
+			// pthread_join() required as clnt() thread was launched via pthread_create()
+			pthread_join(tid, NULL);
 
+		//
+		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
+		//
+///			android::IPCThreadState::shutdown();
+#else
+			sp<ProcessState> proc(ProcessState::self());
+			INFO("starting threaed pool...");
+			ProcessState::self()->startThreadPool();
+
+			clnt(&threaddata);
+
+			// no need for joinThreadPool() nor shutdown()
+			//IPCThreadState::self()->joinThreadPool();
+			//android::IPCThreadState::shutdown();
+#endif	//!START_CLIENT_THREAD
+
+			ALOGD("main exiting... gClientRun=%d",gClientRun);
 		}
 
     }
