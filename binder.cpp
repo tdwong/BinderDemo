@@ -23,6 +23,8 @@
 
 #define LOG_TAG "binder_demo"
 
+#define SERVICE_NAME "binder_Demo"
+
 /* For relevant code see:
     frameworks/native/{include,libs}/binder/{IInterface,Parcel}.{h,cpp}
     system/core/include/utils/{Errors,RefBase}.h
@@ -143,7 +145,7 @@ class BpDemo : public BpInterface<IDemo> {
 
     //IMPLEMENT_META_INTERFACE(Demo, "Demo");
     // Macro above expands to code below. Doing it by hand so we can log ctor and destructor calls.
-    const android::String16 IDemo::descriptor("Demo");
+    const android::String16 IDemo::descriptor(SERVICE_NAME);
     const android::String16& IDemo::getInterfaceDescriptor() const {
         return IDemo::descriptor;
     }
@@ -217,7 +219,7 @@ class Demo : public BnDemo {
 sp<IDemo> getDemoServ() {
     sp<IServiceManager> sm = defaultServiceManager();
     ASSERT(sm != 0);
-    sp<IBinder> binder = sm->getService(String16("Demo"));
+    sp<IBinder> binder = sm->getService(String16(SERVICE_NAME));
     // TODO: If the "Demo" service is not running, getService times out and binder == 0.
     ASSERT(binder != 0);
     sp<IDemo> demo = interface_cast<IDemo>(binder);
@@ -231,7 +233,7 @@ int main(int argc, char **argv) {
     if (argc == 1) {
         ALOGD("We're the service");
 
-        defaultServiceManager()->addService(String16("Demo"), new Demo());
+        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
         android::ProcessState::self()->startThreadPool();
         ALOGD("Demo service is now ready");
         IPCThreadState::self()->joinThreadPool();
