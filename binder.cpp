@@ -14,6 +14,11 @@
  *
  * To view the log output:
  *      adb logcat -v time binder_demo:* *:S
+
+//
+//	$ mldb logcat -v time -s binder_demo:*
+//
+
  *
  * To run, create 2 adb shell sessions. In the first one run "binder" with no
  * arguments to start the service. In the second one run "binder N" where N is
@@ -31,6 +36,7 @@
  */
 
 #include <stdlib.h>
+#include <pthread.h>
 
 #include <utils/RefBase.h>
 #include <utils/Log.h>
@@ -72,7 +78,8 @@ void assert_fail(const char *file, int line, const char *func, const char *expr)
 
 
 // Interface (our AIDL) - Shared by server and client
-class IDemo : public IInterface {
+class IDemo : public IInterface
+{
     public:
         enum {
             ALERT = IBinder::FIRST_CALL_TRANSACTION,
@@ -86,16 +93,20 @@ class IDemo : public IInterface {
         // Requests the service to perform an addition and return the result
         virtual int32_t     add(int32_t v1, int32_t v2) = 0;
 
+	//
+	// see ${NOVA}/frameworks/native/include/binder/IInterface.h
+	//
         DECLARE_META_INTERFACE(Demo);  // Expands to 5 lines below:
         //static const android::String16 descriptor;
         //static android::sp<IDemo> asInterface(const android::sp<android::IBinder>& obj);
         //virtual const android::String16& getInterfaceDescriptor() const;
         //IDemo();
         //virtual ~IDemo();
-};
+};	// class IDemo : public IInterface
 
 // Client
-class BpDemo : public BpInterface<IDemo> {
+class BpDemo : public BpInterface<IDemo>
+{
     public:
         BpDemo(const sp<IBinder>& impl) : BpInterface<IDemo>(impl) {
             ALOGD("BpDemo::BpDemo()");
@@ -141,8 +152,11 @@ class BpDemo : public BpInterface<IDemo> {
             ALOGD("BpDemo::add(%i, %i) = %i (status: %i)", v1, v2, res, status);
             return res;
         }
-};
+};	// class BpDemo : public BpInterface<IDemo>
 
+//
+// see ${NOVA}/frameworks/native/include/binder/IInterface.h
+//
     //IMPLEMENT_META_INTERFACE(Demo, "Demo");
     // Macro above expands to code below. Doing it by hand so we can log ctor and destructor calls.
     const android::String16 IDemo::descriptor(SERVICE_NAME);
@@ -164,17 +178,26 @@ class BpDemo : public BpInterface<IDemo> {
     // End of macro expansion
 
 // Server
-class BnDemo : public BnInterface<IDemo> {
+class BnDemo : public BnInterface<IDemo>
+{
     virtual status_t onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags = 0);
 };
 
-status_t BnDemo::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags) {
+//
+// see ${NOVA}/frameworks/native/include/binder/Parcel.h
+//
+status_t BnDemo::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
+{
     ALOGD("BnDemo::onTransact(%i) %i", code, flags);
     data.checkInterface(this);
     data.print(PLOG); endl(PLOG);
 
     switch(code) {
         case ALERT: {
+			android::String16 str;
+			android::status_t rc = data.readString16(&str);
+											///https://codingnote.blogspot.com/2017/02/c-print-string16-in-android.html
+            ALOGD("BnDemo::onTransact got \"%s\"", String8(str).string());
             alert();    // Ignoring the fixed alert string
             return NO_ERROR;
         } break;
@@ -201,7 +224,8 @@ status_t BnDemo::onTransact(uint32_t code, const Parcel& data, Parcel* reply, ui
     }
 }
 
-class Demo : public BnDemo {
+class Demo : public BnDemo
+{
     virtual void push(int32_t data) {
         INFO("Demo::push(%i)", data);
     }
@@ -214,19 +238,62 @@ class Demo : public BnDemo {
     }
 };
 
+bool gClientRun = true;
+class DeathNotifier : public android::IBinder::DeathRecipient
+{
+	public:
+		DeathNotifier() {}
+
+        virtual void binderDied(const wp<IBinder>& /*who*/) override {
+			// it appears that binderDied() is runing in the main() thread context
+			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+			INFO("death notification: %s", __func__);
+			ALOGD("death notification: %s", __func__);
+
+			// stop clnt() thread
+			gClientRun = false;
+
+			// stop main thread
+			android::IPCThreadState::self()->stopProcess();
+		}
+};
+
 
 // Helper function to get a hold of the "Demo" service.
-sp<IDemo> getDemoServ() {
+///sp<IDemo> getDemoServ()
+sp<IBinder> getDemoServ()
+{
     sp<IServiceManager> sm = defaultServiceManager();
     ASSERT(sm != 0);
     sp<IBinder> binder = sm->getService(String16(SERVICE_NAME));
     // TODO: If the "Demo" service is not running, getService times out and binder == 0.
     ASSERT(binder != 0);
-    sp<IDemo> demo = interface_cast<IDemo>(binder);
-    ASSERT(demo != 0);
-    return demo;
+///    sp<IDemo> demo = interface_cast<IDemo>(binder);
+///    ASSERT(demo != 0);
+///    return demo;
+	// return binder sp (so we can do linkToDeath() in main thread
+    return binder;
 }
 
+
+// client function/thread
+void *clnt(void *ptr)
+{
+	printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+
+	while (gClientRun) {
+
+		/*
+		// will receive death notification even with simple DO-nothing loop
+		*/
+
+		sleep(3);
+	}
+
+	ALOGD("clnt exiting... gClientRun=%d",gClientRun);
+
+	return NULL;
+}
 
 int main(int argc, char **argv) {
 
@@ -243,12 +310,42 @@ int main(int argc, char **argv) {
 
         int v = atoi(argv[1]);
 
-        sp<IDemo> demo = getDemoServ();
+///        sp<IDemo> demo = getDemoServ();
+        sp<IBinder> binder = getDemoServ();
+        sp<IDemo> demo = interface_cast<IDemo>(binder);
+        ASSERT(demo != 0);
+
         demo->alert();
         demo->push(v);
         const int32_t adder = 5;
         int32_t sum = demo->add(v, adder);
         ALOGD("Addition result: %i + %i = %i", v, adder, sum);
+
+		// loop until server death notification
+		if (v==0) {
+
+//
+// register for binder death notification
+//
+#if	1//!defined(LINK_TO_DEATH_IN_CLIENT)
+		// No death notification with this approach
+		sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
+		status_t rc = binder->linkToDeath(spDeathNotifier);
+		INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
+#endif	//!LINK_TO_DEATH_IN_CLIENT
+
+		sp<ProcessState> proc(ProcessState::self());
+		INFO("starting threaed pool...");
+		ProcessState::self()->startThreadPool();
+
+		clnt(NULL);
+
+		// no need for joinThreadPool() nor shutdown()
+		//IPCThreadState::self()->joinThreadPool();
+		//android::IPCThreadState::shutdown();
+
+		}
+
     }
 
     return 0;
