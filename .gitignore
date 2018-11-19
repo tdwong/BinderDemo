@@ -1,2 +1,6 @@
 # VIM swap files
 .*.swp
+
+#
+cscope.out
+tags
