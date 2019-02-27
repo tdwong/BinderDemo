@@ -350,6 +350,7 @@ sp<IBinder> getDemoServ()
 ///    ASSERT(demo != 0);
 ///    return demo;
 	// return binder sp (so we can do linkToDeath() in main thread
+	INFO("%s:%d: returning binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
     return binder;
 }
 
@@ -409,8 +410,8 @@ void *clnt(void *ptr)
 	return NULL;
 }
 
-int main(int argc, char **argv) {
-
+int main(int argc, char **argv)
+{
     if (argc == 1) {
         ALOGD("We're the service");
 
@@ -434,8 +435,12 @@ int main(int argc, char **argv) {
 
 ///        sp<IDemo> demo = getDemoServ();
         sp<IBinder> binder = getDemoServ();
+		INFO("%s:%d: returned binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
+		//
         sp<IDemo> demo = interface_cast<IDemo>(binder);
+		INFO("%s:%d: interface_cast<> binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
         ASSERT(demo != 0);
+
 
         demo->alert();
         demo->push(v);
