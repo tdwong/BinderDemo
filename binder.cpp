@@ -96,6 +96,7 @@ void assert_fail(const char *file, int line, const char *func, const char *expr)
 #define PLOG aout
 
 
+    /* ==== binder common ================================================================================ */
 
 // Interface (our AIDL) - Shared by server and client
 class IDemo : public IInterface
@@ -123,6 +124,10 @@ class IDemo : public IInterface
         //IDemo();
         //virtual ~IDemo();
 };	// class IDemo : public IInterface
+
+    /* ==== binder common ================================================================================ */
+
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 // Client
 class BpDemo : public BpInterface<IDemo>
@@ -179,12 +184,16 @@ class BpDemo : public BpInterface<IDemo>
         }
 };	// class BpDemo : public BpInterface<IDemo>
 
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+    /* ---- binder server -------------------------------------------------------------------------------- */
+
 //
 // see ${NOVA}/frameworks/native/include/binder/IInterface.h
 //
     //IMPLEMENT_META_INTERFACE(Demo, "Demo");
     // Macro above expands to code below. Doing it by hand so we can log ctor and destructor calls.
-    const android::String16 IDemo::descriptor(SERVICE_NAME);
+    const android::String16  IDemo::descriptor(SERVICE_NAME);
     const android::String16& IDemo::getInterfaceDescriptor() const {
         return IDemo::descriptor;
     }
@@ -263,6 +272,9 @@ class Demo : public BnDemo
     }
 };
 
+    /* ---- binder server -------------------------------------------------------------------------------- */
+
+    /* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /*
 // https://www.androiddesignpatterns.com/2013/08/binders-death-recipients.html
@@ -310,7 +322,7 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 			 INFO("death notification: %s", __func__);
 			ALOGD("death notification: %s", __func__);
 
-			// stop clnt() thread
+			// stop clnt_main() thread
 			gClientRun = false;
 
 			// stop main thread
@@ -326,10 +338,13 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 		}
 };
 
+    /* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 // Helper function to get a hold of the "Demo" service.
-///sp<IDemo> getDemoServ()
-sp<IBinder> getDemoServ()
+///-sp<IDemo> getDemoServ()
+sp<IBinder> clnt_GetDemoServ()
 {
 //
 // see ${NOVA}/frameworks/native/include/binder/IServiceManager.h:sp<IServiceManager> defaultServiceManager();
@@ -340,22 +355,25 @@ sp<IBinder> getDemoServ()
     // TODO: If the "Demo" service is not running, getService times out and binder == 0.
     ASSERT(binder != 0);
 
+        // debug
 		status_t rc = binder->pingBinder();
 		INFO("pingBinder: rc=%d", rc);
 
 	//
-	// do NOT register linkToDeath() here. No death notification will be triggered as the DeathNotifier() is out-of-scope when getDemoServ() returns
+	/// NOTE: do NOT register linkToDeath() here. No death notification will be triggered as the DeathNotifier() is out-of-scope when getDemoServ() returns
 	//
-///    sp<IDemo> demo = interface_cast<IDemo>(binder);
-///    ASSERT(demo != 0);
-///    return demo;
+
+    ///-sp<IDemo> demo = interface_cast<IDemo>(binder);
+    ///-ASSERT(demo != 0);
+    ///-return demo;
+
 	// return binder sp (so we can do linkToDeath() in main thread
 	INFO("%s:%d: returning binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
     return binder;
 }
 
 
-// struct to pass to clnt() thread
+// struct to pass to clnt_main() thread
 // using struct to preserve android::sp
 struct thread_data {
 	sp<IDemo>   spIDemo;
@@ -363,7 +381,7 @@ struct thread_data {
 };
 
 // client function/thread
-void *clnt(void *ptr)
+void *clnt_main(void *ptr)
 {
 	printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
@@ -405,14 +423,24 @@ void *clnt(void *ptr)
 		sleep(3);
 	}
 
-	ALOGD("clnt exiting... gClientRun=%d",gClientRun);
+	ALOGD("clnt_main exiting... gClientRun=%d",gClientRun);
 
 	return NULL;
 }
 
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+/*
+ *
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! main !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ *
+ */
+
 int main(int argc, char **argv)
 {
     if (argc == 1) {
+
+    /* ---- binder server -------------------------------------------------------------------------------- */
         ALOGD("We're the service");
 
 		// register SERVICE_NAME as my service with Context Manager
@@ -427,20 +455,22 @@ int main(int argc, char **argv)
 		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
 		//
 		android::IPCThreadState::shutdown();
+    /* ---- binder server -------------------------------------------------------------------------------- */
 
     } else if (argc == 2) {
+
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
         INFO("We're the client: %s", argv[1]);
 
         int v = atoi(argv[1]);
 
-///        sp<IDemo> demo = getDemoServ();
-        sp<IBinder> binder = getDemoServ();
+        ///-sp<IDemo> demo = getDemoServ();
+        sp<IBinder> binder = clnt_GetDemoServ();
 		INFO("%s:%d: returned binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
 		//
         sp<IDemo> demo = interface_cast<IDemo>(binder);
 		INFO("%s:%d: interface_cast<> binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
         ASSERT(demo != 0);
-
 
         demo->alert();
         demo->push(v);
@@ -463,13 +493,13 @@ int main(int argc, char **argv)
 
 				// prepare a structure to hold android::sp
 				thread_data threaddata;
-				threaddata.spIDemo = demo;
+				threaddata.spIDemo   = demo;
 				threaddata.spIBinder = binder;
 
 #if	defined(START_CLIENT_THREAD)
 			// start client thread
 			pthread_t tid;
-			pthread_create(&tid, NULL, clnt, &threaddata);
+			pthread_create(&tid, NULL, clnt_main, &threaddata);
 			printf("client thread id:%lx...\n",tid);
 			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
@@ -480,7 +510,7 @@ int main(int argc, char **argv)
 			// startThreadPool() required for main() to receive death notification
 			ProcessState::self()->startThreadPool();
 ///			IPCThreadState::self()->joinThreadPool();
-			// pthread_join() required as clnt() thread was launched via pthread_create()
+			// pthread_join() required as clnt_main() thread was launched via pthread_create()
 			pthread_join(tid, NULL);
 
 		//
@@ -492,7 +522,7 @@ int main(int argc, char **argv)
 			INFO("starting threaed pool...");
 			ProcessState::self()->startThreadPool();
 
-			clnt(&threaddata);
+			clnt_main(&threaddata);
 
 			// no need for joinThreadPool() nor shutdown()
 			//IPCThreadState::self()->joinThreadPool();
@@ -501,6 +531,7 @@ int main(int argc, char **argv)
 
 			ALOGD("main exiting... gClientRun=%d",gClientRun);
 		}
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
     }
 
