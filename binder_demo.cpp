@@ -25,6 +25,9 @@
  * an integer, to start a client that connects to the service and calls push(N),
  * alert(), and add(N, 5).
  *
+ * (see also binder.cpp)
+ *  What is different from binder.cpp:  launch a separate clnt_main() thread in main()
+ *
 
 //  $ mldb binder_demo      // server
 //  $ mldb binder_demo N    // client N==0 to exercise binderDied
@@ -435,39 +438,15 @@ void *clnt_wait_func(void *ptr)
 
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-/*
- *
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! main !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- *
- */
-
-int main(int argc, char **argv)
+void *clnt_main(void *ptr)
 {
-    if (argc == 1) {
-
-    /* ---- binder server -------------------------------------------------------------------------------- */
-        ALOGD("We're the service");
-
-		// register SERVICE_NAME as my service with Context Manager
-        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
-		// kickstart the server
-        android::ProcessState::self()->startThreadPool();
-        ALOGD("Binder_Demo service is now ready");
-        IPCThreadState::self()->joinThreadPool();
-        ALOGD("Binder_Demo service thread joined");
-
-		//
-		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
-		//
-		android::IPCThreadState::shutdown();
-    /* ---- binder server -------------------------------------------------------------------------------- */
-
-    } else if (argc == 2) {
-
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-        INFO("We're the client: %s", argv[1]);
+        //INFO("We're the client: %s", argv[1]);
 
-        int v = atoi(argv[1]);
+        int v = atoi((char*)ptr);
+
+        //
+        INFO("We're the client: %s (v=%d)", __func__, v);
 
         ///-sp<IDemo> demo = getDemoServ();
         sp<IBinder> binder = clnt_GetDemoServ();
@@ -536,6 +515,51 @@ int main(int argc, char **argv)
 
 			ALOGD("main exiting... gClientRun=%d",gClientRun);
 		}
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+    return NULL;
+}
+
+/*
+ *
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! main !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ *
+ */
+
+int main(int argc, char **argv)
+{
+    if (argc == 1) {
+
+    /* ---- binder server -------------------------------------------------------------------------------- */
+        ALOGD("We're the service");
+
+		// register SERVICE_NAME as my service with Context Manager
+        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
+		// kickstart the server
+        android::ProcessState::self()->startThreadPool();
+        ALOGD("Binder_Demo service is now ready");
+        IPCThreadState::self()->joinThreadPool();
+        ALOGD("Binder_Demo service thread joined");
+
+		//
+		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
+		//
+		android::IPCThreadState::shutdown();
+    /* ---- binder server -------------------------------------------------------------------------------- */
+
+    } else if (argc == 2) {
+
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+			// start client thread
+			pthread_t clnt_tid;
+			pthread_create(&clnt_tid, NULL, clnt_main, argv[1]);
+			printf("client thread id:%lx...\n",clnt_tid);
+			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+
+            //
+            //*** wait for clnt_main thread
+            //
+            pthread_join(clnt_tid, NULL);
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
     }

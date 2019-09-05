@@ -20,14 +20,16 @@
 //
 
  *
- * To run, create 2 adb shell sessions. In the first one run "binder" with no
- * arguments to start the service. In the second one run "binder N" where N is
- * an integer, to start a client that connects to the service and calls push(N),
- * alert(), and add(N, 5).
+ * instead of running client & service on two separate adb shell sessions,
+ * this program starts a non-interactive client in an indepedent thread
+ *
+ * (see also binder.cpp)
  *
 
-//  $ mldb binder_demo      // server
-//  $ mldb binder_demo N    // client N==0 to exercise binderDied
+///TODO: enable user-specified client startup sleep timer (environment variable?)
+///TODO: create a server died situation... (pthread_kill?)
+
+//  $ mldb binder_demo N    // server & client.  N==0 to exercise binderDied
 
  */
 
@@ -435,39 +437,18 @@ void *clnt_wait_func(void *ptr)
 
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-/*
- *
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! main !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- *
- */
-
-int main(int argc, char **argv)
+void *clnt_main(void *ptr)
 {
-    if (argc == 1) {
-
-    /* ---- binder server -------------------------------------------------------------------------------- */
-        ALOGD("We're the service");
-
-		// register SERVICE_NAME as my service with Context Manager
-        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
-		// kickstart the server
-        android::ProcessState::self()->startThreadPool();
-        ALOGD("Binder_Demo service is now ready");
-        IPCThreadState::self()->joinThreadPool();
-        ALOGD("Binder_Demo service thread joined");
-
-		//
-		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
-		//
-		android::IPCThreadState::shutdown();
-    /* ---- binder server -------------------------------------------------------------------------------- */
-
-    } else if (argc == 2) {
-
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-        INFO("We're the client: %s", argv[1]);
+        //INFO("We're the client: %s", argv[1]);
 
-        int v = atoi(argv[1]);
+        int v = (ptr==NULL) ? 0 : atoi((char*)ptr);
+        int sleepTime = 3;  // seconds
+
+        //
+        INFO("We're the client: %s (v=%d) sleep for %d seconds", __func__, v, sleepTime);
+        sleep(sleepTime);
+        //
 
         ///-sp<IDemo> demo = getDemoServ();
         sp<IBinder> binder = clnt_GetDemoServ();
@@ -538,7 +519,49 @@ int main(int argc, char **argv)
 		}
     /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-    }
+    return NULL;
+}
+
+/*
+ *
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! main !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ *
+ */
+
+int main(int argc, char **argv)
+{
+    // start binder client as a separate thread
+    //
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+			// start client thread
+			pthread_t clnt_tid;
+			pthread_create(&clnt_tid, NULL, clnt_main, (argc>1)?argv[1]:NULL);
+			printf("client thread id:%lx...\n",clnt_tid);
+			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+    // run as binder server hereafter
+
+        //
+        ///TODO: create a server died situation...
+        //
+
+    /* ---- binder server -------------------------------------------------------------------------------- */
+        ALOGD("We're the service");
+
+		// register SERVICE_NAME as my service with Context Manager
+        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
+		// kickstart the server
+        android::ProcessState::self()->startThreadPool();
+        ALOGD("Binder_Demo service is now ready");
+        IPCThreadState::self()->joinThreadPool();
+        ALOGD("Binder_Demo service thread joined");
+
+		//
+		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
+		//
+		android::IPCThreadState::shutdown();
+    /* ---- binder server -------------------------------------------------------------------------------- */
 
     return 0;
 }
