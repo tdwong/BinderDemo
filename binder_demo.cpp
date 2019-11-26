@@ -13,7 +13,7 @@
  * Both the server and client code are included below.
  *
  * To view the log output:
- *      adb logcat -v time binder_demo:* *:S
+ *		adb logcat -v time binder_demo:* *:S
 
 //
 //	$ mldb logcat -v time -s binder_demo:*
@@ -26,11 +26,11 @@
  * alert(), and add(N, 5).
  *
  * (see also binder.cpp)
- *  What is different from binder.cpp:  launch a separate clnt_main() thread in main()
+ *	What is different from binder.cpp:	launch a separate clnt_main() thread in main()
  *
 
-//  $ mldb binder_demo      // server
-//  $ mldb binder_demo N    // client N==0 to exercise binderDied
+//	$ mldb binder_demo		// server
+//	$ mldb binder_demo N	// client N==0 to exercise binderDied
 
  */
 
@@ -43,12 +43,8 @@
 //	- define START_CLIENT_THREAD to use a separate thread for remote operation(s)
 //	- linkToDeath must be registered in the same thread that performs remote operation
 //
-#define	START_CLIENT_THREAD		1	// run a separate thread
-#if	defined(START_CLIENT_THREAD)
-	#define	LINK_TO_DEATH_IN_CLIENT	1
-#else
-	#undef	LINK_TO_DEATH_IN_CLIENT
-#endif	//!START_CLIENT_THREAD
+//#define	START_CLIENT_THREAD		0	// run a separate client wait thread
+#undef	START_CLIENT_THREAD		  // do no start separate client wait thread
 
 //
 // enable one or more, or none remote operation(s) to be performed in the loop
@@ -58,8 +54,8 @@
 #define	REMOTE_ADD		0x04
 
 /* For relevant code see:
-    frameworks/native/{include,libs}/binder/{IInterface,Parcel}.{h,cpp}
-    system/core/include/utils/{Errors,RefBase}.h
+	frameworks/native/{include,libs}/binder/{IInterface,Parcel}.{h,cpp}
+	system/core/include/utils/{Errors,RefBase}.h
  */
 
 #include <stdlib.h>
@@ -80,149 +76,149 @@ using namespace android;
 
 
 #define INFO(...) \
-    do { \
-        printf(__VA_ARGS__); \
-        printf("\n"); \
-        ALOGD(__VA_ARGS__); \
-    } while(0)
+	do { \
+		printf(__VA_ARGS__); \
+		printf("\n"); \
+		ALOGD(__VA_ARGS__); \
+	} while(0)
 
 void assert_fail(const char *file, int line, const char *func, const char *expr) {
-    INFO("assertion failed at file %s, line %d, function %s:",
-            file, line, func);
-    INFO("%s", expr);
-    abort();
+	INFO("assertion failed at file %s, line %d, function %s:",
+			file, line, func);
+	INFO("%s", expr);
+	abort();
 }
 
 #define ASSERT(e) \
-    do { \
-        if (!(e)) \
-            assert_fail(__FILE__, __LINE__, __func__, #e); \
-    } while(0)
+	do { \
+		if (!(e)) \
+			assert_fail(__FILE__, __LINE__, __func__, #e); \
+	} while(0)
 
 
 // Where to print the parcel contents: aout, alog, aerr. alog doesn't seem to work.
 #define PLOG aout
 
 
-    /* ==== binder common ================================================================================ */
+	/* ==== binder common ================================================================================ */
 
 // Interface (our AIDL) - Shared by server and client
 class IDemo : public IInterface
 {
-    public:
-        enum {
-            ALERT = IBinder::FIRST_CALL_TRANSACTION,
-            PUSH,
-            ADD
-        };
-        // Sends a user-provided value to the service
-        virtual void        push(int32_t data)          = 0;
-        // Sends a fixed alert string to the service
-        virtual void        alert()                     = 0;
-        // Requests the service to perform an addition and return the result
-        virtual int32_t     add(int32_t v1, int32_t v2) = 0;
+	public:
+		enum {
+			ALERT = IBinder::FIRST_CALL_TRANSACTION,
+			PUSH,
+			ADD
+		};
+		// Sends a user-provided value to the service
+		virtual void    push(int32_t data)			= 0;
+		// Sends a fixed alert string to the service
+		virtual void    alert()						= 0;
+		// Requests the service to perform an addition and return the result
+		virtual int32_t	add(int32_t v1, int32_t v2) = 0;
 
 	//
 	// see ${NOVA}/frameworks/native/include/binder/IInterface.h
 	//
-        DECLARE_META_INTERFACE(Demo);  // Expands to 5 lines below:
-        //static const android::String16 descriptor;
-        //static android::sp<IDemo> asInterface(const android::sp<android::IBinder>& obj);
-        //virtual const android::String16& getInterfaceDescriptor() const;
-        //IDemo();
-        //virtual ~IDemo();
+		DECLARE_META_INTERFACE(Demo);  // Expands to 5 lines below:
+		//static const android::String16 descriptor;
+		//static android::sp<IDemo> asInterface(const android::sp<android::IBinder>& obj);
+		//virtual const android::String16& getInterfaceDescriptor() const;
+		//IDemo();
+		//virtual ~IDemo();
 };	// class IDemo : public IInterface
 
-    /* ==== binder common ================================================================================ */
+	/* ==== binder common ================================================================================ */
 
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 // Client
 class BpDemo : public BpInterface<IDemo>
 {
-    public:
-        BpDemo(const sp<IBinder>& impl) : BpInterface<IDemo>(impl) {
-            ALOGD("BpDemo::BpDemo()");
-        }
+	public:
+		BpDemo(const sp<IBinder>& impl) : BpInterface<IDemo>(impl) {
+			ALOGD("BpDemo::BpDemo()");
+		}
 
-        virtual void push(int32_t push_data) {
-            Parcel data, reply;
-            data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
-            data.writeInt32(push_data);
+		virtual void push(int32_t push_data) {
+			Parcel data, reply;
+			data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
+			data.writeInt32(push_data);
 
-            aout << "BpDemo::push parcel to be sent:\n";
-            data.print(PLOG); endl(PLOG);
+			aout << "BpDemo::push parcel to be sent:\n";
+			data.print(PLOG); endl(PLOG);
 
-            remote()->transact(PUSH, data, &reply);
+			remote()->transact(PUSH, data, &reply);
 
-            aout << "BpDemo::push parcel reply:\n";
-            reply.print(PLOG); endl(PLOG);
+			aout << "BpDemo::push parcel reply:\n";
+			reply.print(PLOG); endl(PLOG);
 
-            ALOGD("BpDemo::push(%i)", push_data);
-        }
+			ALOGD("BpDemo::push(%i)", push_data);
+		}
 
-        virtual void alert() {
-            Parcel data, reply;
-            data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
-            data.writeString16(String16("The alert string"));
-            remote()->transact(ALERT, data, &reply, IBinder::FLAG_ONEWAY);    // asynchronous call
-            ALOGD("BpDemo::alert()");
-        }
+		virtual void alert() {
+			Parcel data, reply;
+			data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
+			data.writeString16(String16("The alert string"));
+			remote()->transact(ALERT, data, &reply, IBinder::FLAG_ONEWAY);	  // asynchronous call
+			ALOGD("BpDemo::alert()");
+		}
 
-        virtual int32_t add(int32_t v1, int32_t v2) {
-            Parcel data, reply;
-            data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
-            data.writeInt32(v1);
-            data.writeInt32(v2);
-            aout << "BpDemo::add parcel to be sent:\n";
-              ALOGD("BpDemo::add parcel to be sent:");		// send to log
-            data.print(PLOG); endl(PLOG);
-            remote()->transact(ADD, data, &reply);
-            aout << "BpDemo::add transact reply\n";			// send to stdou
-              ALOGD("BpDemo::add transact reply");
-            reply.print(PLOG); endl(PLOG);
+		virtual int32_t add(int32_t v1, int32_t v2) {
+			Parcel data, reply;
+			data.writeInterfaceToken(IDemo::getInterfaceDescriptor());
+			data.writeInt32(v1);
+			data.writeInt32(v2);
+			aout << "BpDemo::add parcel to be sent:\n";
+			  ALOGD("BpDemo::add parcel to be sent:");		// send to log
+			data.print(PLOG); endl(PLOG);
+			remote()->transact(ADD, data, &reply);
+			aout << "BpDemo::add transact reply\n";			// send to stdou
+			  ALOGD("BpDemo::add transact reply");
+			reply.print(PLOG); endl(PLOG);
 
-            int32_t res = 0;
-            status_t status = reply.readInt32(&res);
+			int32_t res = 0;
+			status_t status = reply.readInt32(&res);
 			// Status s=Status::fromStatusT(status).toString8().string();
-            aout << "BpDemo::add transact reply\n";			// send to stdou
-            printf("BpDemo::add(%i, %i) = %i (status: %i: %s)\n", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
-             ALOGD("BpDemo::add(%i, %i) = %i (status: %i: %s)", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
-            return res;
-        }
+			aout << "BpDemo::add transact reply\n";			// send to stdou
+			printf("BpDemo::add(%i, %i) = %i (status: %i: %s)\n", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
+			 ALOGD("BpDemo::add(%i, %i) = %i (status: %i: %s)", v1, v2, res, status, android::binder::Status::fromStatusT(status).toString8().string());
+			return res;
+		}
 };	// class BpDemo : public BpInterface<IDemo>
 
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-    /* ---- binder server -------------------------------------------------------------------------------- */
+	/* ---- binder server -------------------------------------------------------------------------------- */
 
 //
 // see ${NOVA}/frameworks/native/include/binder/IInterface.h
 //
-    //IMPLEMENT_META_INTERFACE(Demo, "Demo");
-    // Macro above expands to code below. Doing it by hand so we can log ctor and destructor calls.
-    const android::String16  IDemo::descriptor(SERVICE_NAME);
-    const android::String16& IDemo::getInterfaceDescriptor() const {
-        return IDemo::descriptor;
-    }
-    android::sp<IDemo> IDemo::asInterface(const android::sp<android::IBinder>& obj) {
-        android::sp<IDemo> intr;
-        if (obj != NULL) {
-            intr = static_cast<IDemo*>(obj->queryLocalInterface(IDemo::descriptor).get());
-            if (intr == NULL) {
-                intr = new BpDemo(obj);
-            }
-        }
-        return intr;
-    }
-    IDemo::IDemo() { ALOGD("IDemo::IDemo()"); }
-    IDemo::~IDemo() { ALOGD("IDemo::~IDemo()"); }
-    // End of macro expansion
+	//IMPLEMENT_META_INTERFACE(Demo, "Demo");
+	// Macro above expands to code below. Doing it by hand so we can log ctor and destructor calls.
+	const android::String16	 IDemo::descriptor(SERVICE_NAME);
+	const android::String16& IDemo::getInterfaceDescriptor() const {
+		return IDemo::descriptor;
+	}
+	android::sp<IDemo> IDemo::asInterface(const android::sp<android::IBinder>& obj) {
+		android::sp<IDemo> intr;
+		if (obj != NULL) {
+			intr = static_cast<IDemo*>(obj->queryLocalInterface(IDemo::descriptor).get());
+			if (intr == NULL) {
+				intr = new BpDemo(obj);
+			}
+		}
+		return intr;
+	}
+	IDemo::IDemo() { ALOGD("IDemo::IDemo()"); }
+	IDemo::~IDemo() { ALOGD("IDemo::~IDemo()"); }
+	// End of macro expansion
 
 // Server
 class BnDemo : public BnInterface<IDemo>
 {
-    virtual status_t onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags = 0);
+	virtual status_t onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags = 0);
 };
 
 //
@@ -230,59 +226,59 @@ class BnDemo : public BnInterface<IDemo>
 //
 status_t BnDemo::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
 {
-    ALOGD("BnDemo::onTransact(%i) %i", code, flags);
-    data.checkInterface(this);
-    data.print(PLOG); endl(PLOG);
+	ALOGD("BnDemo::onTransact(%i) %i", code, flags);
+	data.checkInterface(this);
+	data.print(PLOG); endl(PLOG);
 
-    switch(code) {
-        case ALERT: {
+	switch(code) {
+		case ALERT: {
 			android::String16 str;
 			android::status_t rc = data.readString16(&str);
 											///https://codingnote.blogspot.com/2017/02/c-print-string16-in-android.html
-            ALOGD("BnDemo::onTransact got \"%s\"", String8(str).string());
-            alert();    // Ignoring the fixed alert string
-            return NO_ERROR;
-        } break;
-        case PUSH: {
-            int32_t inData = data.readInt32();
-            ALOGD("BnDemo::onTransact got %i", inData);
-            push(inData);
-            ASSERT(reply != 0);
-            reply->print(PLOG); endl(PLOG);
-            return NO_ERROR;
-        } break;
-        case ADD: {
-            int32_t inV1 = data.readInt32();
-            int32_t inV2 = data.readInt32();
-            int32_t sum = add(inV1, inV2);
-            ALOGD("BnDemo::onTransact add(%i, %i) = %i", inV1, inV2, sum);
-            ASSERT(reply != 0);
-            reply->print(PLOG); endl(PLOG);
-            reply->writeInt32(sum);
-            return NO_ERROR;
-        } break;
-        default:
-            return BBinder::onTransact(code, data, reply, flags);
-    }
+			ALOGD("BnDemo::onTransact got \"%s\"", String8(str).string());
+			alert();	// Ignoring the fixed alert string
+			return NO_ERROR;
+		} break;
+		case PUSH: {
+			int32_t inData = data.readInt32();
+			ALOGD("BnDemo::onTransact got %i", inData);
+			push(inData);
+			ASSERT(reply != 0);
+			reply->print(PLOG); endl(PLOG);
+			return NO_ERROR;
+		} break;
+		case ADD: {
+			int32_t inV1 = data.readInt32();
+			int32_t inV2 = data.readInt32();
+			int32_t sum = add(inV1, inV2);
+			ALOGD("BnDemo::onTransact add(%i, %i) = %i", inV1, inV2, sum);
+			ASSERT(reply != 0);
+			reply->print(PLOG); endl(PLOG);
+			reply->writeInt32(sum);
+			return NO_ERROR;
+		} break;
+		default:
+			return BBinder::onTransact(code, data, reply, flags);
+	}
 }
 
 class Demo : public BnDemo
 {
-    virtual void push(int32_t data) {
-        INFO("Demo::push(%i)", data);
-    }
-    virtual void alert() {
-        INFO("Demo::alert()");
-    }
-    virtual int32_t add(int32_t v1, int32_t v2) {
-        INFO("Demo::add(%i, %i)", v1, v2);
-        return v1 + v2;
-    }
+	virtual void push(int32_t data) {
+		INFO("Demo::push(%i)", data);
+	}
+	virtual void alert() {
+		INFO("Demo::alert()");
+	}
+	virtual int32_t add(int32_t v1, int32_t v2) {
+		INFO("Demo::add(%i, %i)", v1, v2);
+		return v1 + v2;
+	}
 };
 
-    /* ---- binder server -------------------------------------------------------------------------------- */
+	/* ---- binder server -------------------------------------------------------------------------------- */
 
-    /* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /*
 // https://www.androiddesignpatterns.com/2013/08/binders-death-recipients.html
@@ -311,11 +307,11 @@ class Demo : public BnDemo
 // see ${NOVA}/frameworks/native/include/binder/IBinder.h: class DeathRecipient : public virtual RefBase
 //
 /*
-    class DeathRecipient : public virtual RefBase
-    {
-    public:
-        virtual void binderDied(const wp<IBinder>& who) = 0;
-    };
+	class DeathRecipient : public virtual RefBase
+	{
+	public:
+		virtual void binderDied(const wp<IBinder>& who) = 0;
+	};
 */
 //
 bool gClientRun = true;
@@ -324,7 +320,7 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 	public:
 		DeathNotifier() {}
 
-        virtual void binderDied(const wp<IBinder>& /*who*/) override {
+		virtual void binderDied(const wp<IBinder>& /*who*/) override {
 			// it appears that binderDied() is runing in the main() thread context
 			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 			 INFO("death notification: %s", __func__);
@@ -346,9 +342,9 @@ class DeathNotifier : public android::IBinder::DeathRecipient
 		}
 };
 
-    /* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binderDied for binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 // Helper function to get a hold of the "Demo" service.
 ///-sp<IDemo> getDemoServ()
@@ -357,13 +353,13 @@ sp<IBinder> clnt_GetDemoServ()
 //
 // see ${NOVA}/frameworks/native/include/binder/IServiceManager.h:sp<IServiceManager> defaultServiceManager();
 //
-    sp<IServiceManager> sm = defaultServiceManager();
-    ASSERT(sm != 0);
-    sp<IBinder> binder = sm->getService(String16(SERVICE_NAME));
-    // TODO: If the "Demo" service is not running, getService times out and binder == 0.
-    ASSERT(binder != 0);
+	sp<IServiceManager> sm = defaultServiceManager();
+	ASSERT(sm != 0);
+	sp<IBinder> binder = sm->getService(String16(SERVICE_NAME));
+	// TODO: If the "Demo" service is not running, getService times out and binder == 0.
+	ASSERT(binder != 0);
 
-        // debug
+		// debug
 		status_t rc = binder->pingBinder();
 		INFO("pingBinder: rc=%d", rc);
 
@@ -371,38 +367,53 @@ sp<IBinder> clnt_GetDemoServ()
 	/// NOTE: do NOT register linkToDeath() here. No death notification will be triggered as the DeathNotifier() is out-of-scope when getDemoServ() returns
 	//
 
-    ///-sp<IDemo> demo = interface_cast<IDemo>(binder);
-    ///-ASSERT(demo != 0);
-    ///-return demo;
+	///-sp<IDemo> demo = interface_cast<IDemo>(binder);
+	///-ASSERT(demo != 0);
+	///-return demo;
 
 	// return binder sp (so we can do linkToDeath() in main thread
 	INFO("%s:%d: returning binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
-    return binder;
+	return binder;
 }
 
 
 // struct to pass to clnt_wait_func() thread
 // using struct to preserve android::sp
 struct thread_data {
-	sp<IDemo>   spIDemo;
+	sp<IDemo>	spIDemo;
 	sp<IBinder> spIBinder;
+	pthread_t	threadId;
 };
 
 // client function/thread
 void *clnt_wait_func(void *ptr)
 {
 	printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
+	ALOGD("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
 	thread_data *p = (thread_data*) ptr;
 	sp<IDemo> demo = p->spIDemo;
 
-#if	defined(LINK_TO_DEATH_IN_CLIENT)
-	sp<IBinder> binder = p->spIBinder;
+//
+// If clnt_wait_func() is running as an independent thread (from main), register for death notification must be done here
+//
+	printf("-->>> %s: parent_thread id:%lx...\n",__func__,p->threadId);
+	ALOGD("-->>> %s: parent_thread id:%lx...\n",__func__,p->threadId);
+
+	//
+	// NOTE: do NOT declare andriod::sp within {} closure or they will be automatically destroyed
+	//
+////=========////
+	/* link to binder death event ONLY required if clnt_wait_func is running as a separate thread
+	 */
+		sp<IBinder> binder = p->spIBinder;
 
 		sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
-		status_t rc = binder->linkToDeath(spDeathNotifier);
-		INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
-#endif	//LINK_TO_DEATH_IN_CLIENT
+		if (p->threadId != pthread_self()) {
+			status_t rc = binder->linkToDeath(spDeathNotifier);
+			INFO("%s:%d: linkToDeath: rc=%d (tid=%lx)", __func__,__LINE__, rc, pthread_self());
+		}
+////=========////
 
 	while (gClientRun) {
 
@@ -436,55 +447,58 @@ void *clnt_wait_func(void *ptr)
 	return NULL;
 }
 
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 void *clnt_main(void *ptr)
 {
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-        //INFO("We're the client: %s", argv[1]);
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+		//INFO("We're the client: %s", argv[1]);
 
-        int v = atoi((char*)ptr);
+		int v = atoi((char*)ptr);
 
-        //
-        INFO("We're the client: %s (v=%d)", __func__, v);
+		//
+		INFO("We're the client: %s (v=%d)", __func__, v);
 
-        ///-sp<IDemo> demo = getDemoServ();
-        sp<IBinder> binder = clnt_GetDemoServ();
+		///-sp<IDemo> demo = getDemoServ();
+		sp<IBinder> binder = clnt_GetDemoServ();
 		INFO("%s:%d: returned binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
 		//
-        sp<IDemo> demo = interface_cast<IDemo>(binder);
+		sp<IDemo> demo = interface_cast<IDemo>(binder);
 		INFO("%s:%d: interface_cast<> binder: %p, count=%d", __FUNCTION__,__LINE__,binder.get(), binder->getStrongCount());
-        ASSERT(demo != 0);
+		ASSERT(demo != 0);
 
-        demo->alert();
-        demo->push(v);
-        const int32_t adder = 5;
-        int32_t sum = demo->add(v, adder);
-        ALOGD("Addition result: %i + %i = %i", v, adder, sum);
+		demo->alert();
+		demo->push(v);
+		const int32_t adder = 5;
+		int32_t sum = demo->add(v, adder);
+		ALOGD("Addition result: %i + %i = %i", v, adder, sum);
 
 		// loop until server death notification
 		if (v==0) {
 
 //
 // register for binder death notification
+//	As clnt_wait_func() will be run as part of the main thread, register for binder death notification is done here
 //
-#if	!defined(LINK_TO_DEATH_IN_CLIENT)
+			// i.e. death notification will be received in the same "client_main" thread
+#if	!defined(START_CLIENT_THREAD)
 			// No death notification with this approach
 			sp<DeathNotifier> spDeathNotifier = new DeathNotifier();
 			status_t rc = binder->linkToDeath(spDeathNotifier);
-			INFO("linkToDeath: rc=%d (tid=%lx", rc, pthread_self());
-#endif	//!LINK_TO_DEATH_IN_CLIENT
+			INFO("%s:%d: linkToDeath: rc=%d (tid=%lx)", __func__,__LINE__, rc, pthread_self());
+#endif	//!START_CLIENT_THREAD
 
 				// prepare a structure to hold android::sp
 				thread_data threaddata;
-				threaddata.spIDemo   = demo;
+				threaddata.spIDemo	 = demo;
 				threaddata.spIBinder = binder;
+				threaddata.threadId	 = pthread_self();
 
 #if	defined(START_CLIENT_THREAD)
 			// start client thread
 			pthread_t tid;
 			pthread_create(&tid, NULL, clnt_wait_func, &threaddata);
-			printf("client thread id:%lx...\n",tid);
+			printf("%s:%d: client thread id:%lx...\n",__func__,__LINE__,tid);
 			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
 			//https://groups.google.com/forum/#!topic/android-platform/vt3xsM2kcTM
@@ -502,6 +516,7 @@ void *clnt_main(void *ptr)
 		//
 ///			android::IPCThreadState::shutdown();
 #else
+			INFO("%s runs w/o separate waiting thread...",__func__);
 			sp<ProcessState> proc(ProcessState::self());
 			INFO("starting threaed pool...");
 			ProcessState::self()->startThreadPool();
@@ -515,9 +530,9 @@ void *clnt_main(void *ptr)
 
 			ALOGD("main exiting... gClientRun=%d",gClientRun);
 		}
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-    return NULL;
+	return NULL;
 }
 
 /*
@@ -528,45 +543,58 @@ void *clnt_main(void *ptr)
 
 int main(int argc, char **argv)
 {
-    if (argc == 1) {
+	/* usage */
+	if ((argc == 2) &&
+		((strcmp(argv[1],"-h") == 0) || (strcmp(argv[1],"--help") == 0)))
+	{
+		printf("usage: %s [messageCount]\n"
+			   "       w/o messageCount - runs as a service\n"
+			   "	   messageCount=0	- runs as a client in an infinite loop\n"
+			   "	   messageCount!=0	- runs as a client and send N messages\n"
+			   , argv[0]);
+		return 0;
+	}
 
-    /* ---- binder server -------------------------------------------------------------------------------- */
-        ALOGD("We're the service");
+	if (argc == 1) {
+
+	/* ---- binder server -------------------------------------------------------------------------------- */
+		ALOGD("We're the service");
+		printf("We're the service\n");
 
 		// register SERVICE_NAME as my service with Context Manager
-        defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
+		defaultServiceManager()->addService(String16(SERVICE_NAME), new Demo());
 		// kickstart the server
-        android::ProcessState::self()->startThreadPool();
-        ALOGD("Binder_Demo service is now ready");
-        IPCThreadState::self()->joinThreadPool();
-        ALOGD("Binder_Demo service thread joined");
+		android::ProcessState::self()->startThreadPool();
+		ALOGD("Binder_Demo service is now ready");
+		IPCThreadState::self()->joinThreadPool();
+		ALOGD("Binder_Demo service thread joined");
 
 		//
 		// if we ever get out of joinThreadPool() via IPCThreadState::self()->stopProcess();
 		//
 		android::IPCThreadState::shutdown();
-    /* ---- binder server -------------------------------------------------------------------------------- */
+	/* ---- binder server -------------------------------------------------------------------------------- */
 
-    } else if (argc == 2) {
+	} else if (argc == 2) {
 
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 			// start client thread
 			pthread_t clnt_tid;
 			pthread_create(&clnt_tid, NULL, clnt_main, argv[1]);
-			printf("client thread id:%lx...\n",clnt_tid);
+			printf("%s:%d: client thread id:%lx...\n",__func__,__LINE__,clnt_tid);
 			printf("-->>> %s: thread id:%lx...\n",__func__,pthread_self());
 
-            //
-            //*** wait for clnt_main thread
-            //
-            pthread_join(clnt_tid, NULL);
-    /* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+			//
+			//*** wait for clnt_main thread
+			//
+			pthread_join(clnt_tid, NULL);
+	/* ~~~~ binder client ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-    }
+	}
 
-    return 0;
+	return 0;
 }
 
 /*
-    Single-threaded service, single-threaded client.
+	Single-threaded service, single/multiple-threaded client.
  */
